@@ -1,88 +1,57 @@
-# proxy_sortie.py
 import socket
-import threading
-import requests  # Pour faire les requêtes HTTP
-from crypto_utils import generate_rsa_keys, rsa_encrypt, rsa_decrypt, aes_encrypt, aes_decrypt
 
-# ========================
 # Configuration
-# ========================
-HOST = "127.0.0.1"   # Adresse du proxy de sortie
-PORT = 9090          # Port d'écoute pour le proxy d'entrée
+HOST = '127.0.0.1'  # Adresse locale
+PORT = 9090         # Port d'écoute du proxy de sortie
 
-# ========================
-# Clés RSA pour échange AES
-# ========================
-private_key, public_key = generate_rsa_keys()
-
-# ========================
-# Gestion d'une connexion depuis le proxy d'entrée
-# ========================
-def handle_proxy_entree(client_socket):
-    try:
-        # 1️⃣ Réception de la clé AES chiffrée via RSA
-        encrypted_aes_key = client_socket.recv(1024)  # Taille max de clé RSA chiffrée
-        aes_key = rsa_decrypt(private_key, encrypted_aes_key)
-        print("Clé AES reçue et déchiffrée avec succès")
+def start_proxy_sortie():
+    # Création du socket serveur
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as server_socket:
+        server_socket.bind((HOST, PORT))
+        server_socket.listen(5)
+        print(f"[+] Proxy de sortie en écoute sur {HOST}:{PORT}...")
 
         while True:
-            # 2️⃣ Réception du trafic chiffré
-            data = client_socket.recv(8192)
-            if not data:
-                break
+            client_conn, client_addr = server_socket.accept()
+            print(f"[>] Connexion du proxy d'entrée depuis {client_addr}")
 
-            # Extraction nonce, tag, ciphertext
-            nonce = data[:12]
-            tag = data[12:28]
-            ciphertext = data[28:]
-            
-            # Déchiffrement AES
-            decrypted_request = aes_decrypt(aes_key, nonce, ciphertext, tag)
-            
-            # 3️⃣ Envoyer la requête HTTP réelle
-            # Pour simplification, on envoie uniquement GET
-            try:
-                request_lines = decrypted_request.decode().split("\r\n")
-                url = request_lines[0].split()[1]  # "GET /path HTTP/1.1" -> "/path"
-                headers = {}  # Optionnel: ajouter les headers si besoin
-                
-                if not url.startswith("http"):
-                    # Ajouter un domaine de test si seulement le path est envoyé
-                    url = "http://example.com" + url
+            with client_conn:
+                # Lire la requête HTTP envoyée par le proxy d'entrée
+                request = client_conn.recv(4096)
+                print(f"[>] Requête reçue :\n{request.decode(errors='ignore')}")
 
-                response = requests.get(url, headers=headers)
-                response_data = response.content
-            except Exception as e:
-                response_data = f"Erreur lors de la requête HTTP: {e}".encode()
+                # Extraire l'hôte cible depuis la requête HTTP
+                try:
+                    first_line = request.decode().split('\n')[0]
+                    url = first_line.split(' ')[1]
+                    if url.startswith("http://"):
+                        url = url[7:]
+                    host = url.split('/')[0]
+                    print(f"[i] Hôte cible : {host}")
+                except Exception as e:
+                    print(f"[!] Erreur d'analyse de la requête : {e}")
+                    continue
 
-            # 4️⃣ Chiffrement AES de la réponse
-            nonce_r, ciphertext_r, tag_r = aes_encrypt(aes_key, response_data)
-            client_socket.sendall(nonce_r + tag_r + ciphertext_r)
+                # Connexion au serveur web réel
+                try:
+                    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as web_socket:
+                        web_socket.connect((host, 80))
+                        web_socket.sendall(request)
 
-    except Exception as e:
-        print("Erreur dans handle_proxy_entree:", e)
-    finally:
-        client_socket.close()
+                        # Lire la réponse du serveur web
+                        response = b""
+                        while True:
+                            data = web_socket.recv(4096)
+                            if not data:
+                                break
+                            response += data
+                except Exception as e:
+                    print(f"[!] Erreur lors de la connexion au serveur web : {e}")
+                    response = b"HTTP/1.1 502 Bad Gateway\r\n\r\nErreur de connexion au serveur web."
 
+                # Renvoyer la réponse au proxy d'entrée
+                client_conn.sendall(response)
+                print(f"[<] Réponse renvoyée au proxy d'entrée.")
 
-# ========================
-# Serveur principal
-# ========================
-def start_proxy_sortie():
-    server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    server.bind((HOST, PORT))
-    server.listen(5)
-    print(f"Proxy de sortie démarré sur {HOST}:{PORT}")
-    
-    while True:
-        client_socket, addr = server.accept()
-        print(f"Connexion reçue du proxy d'entrée {addr}")
-        client_handler = threading.Thread(target=handle_proxy_entree, args=(client_socket,))
-        client_handler.start()
-
-
-# ========================
-# Point d’entrée
-# ========================
 if __name__ == "__main__":
     start_proxy_sortie()
