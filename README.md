@@ -9,3 +9,5 @@ proxy_securise/
 ├── proxy_sortie.py       # Code du proxy de sortie
 ├── crypto_utils.py       # Fonctions RSA/AES
 ├── README.md             # Explication du projet
+
+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
