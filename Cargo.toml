@@ -1,0 +1,7 @@
+[workspace]
+members = [
+    "common",
+    "entry_proxy",
+    "exit_proxy",
+]
+resolver = "2"

@@ -1,0 +1,19 @@
+[package]
+name = "entry_proxy"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+base64 = "0.22"
+axum = "0.7"
+common = { path = "../common" }
+tokio = { version = "1.0", features = ["full"] }
+hyper = { version = "1.0", features = ["full"] }
+hyper-util = { version = "0.1", features = ["full"] }
+http-body-util = "0.1"
+anyhow = "1.0"
+reqwest = { version = "0.12", features = ["json"] } 
+# We might use reqwest to talk to exit proxy or hyper client
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+bytes = "1.0"

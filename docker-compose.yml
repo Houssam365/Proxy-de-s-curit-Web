@@ -1,0 +1,25 @@
+version: '3.8'
+
+services:
+  exit_proxy:
+    build: .
+    command: exit_proxy
+    expose:
+      - "8080"
+    networks:
+      - proxy_net
+
+  entry_proxy:
+    build: .
+    command: entry_proxy
+    ports:
+      - "8081:8081"
+    environment:
+      - EXIT_PROXY_URL=http://exit_proxy:8080
+    depends_on:
+      - exit_proxy
+    networks:
+      - proxy_net
+
+networks:
+  proxy_net:
